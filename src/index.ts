@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { google } from "googleapis";
+import { imprimirComanda } from "./thermal_printer.js";
 
 dotenv.config();
 const app = express();
@@ -47,34 +48,47 @@ interface plato_menu {
   ID: string;
   Nombre: string;
   Cantidad: number;
+  Observaciones?: string;
 }
 
 app.post("/registrar_menu", async (req, res) => {
   try {
-    const { items } = req.body;
+    const { mesa, items } = req.body as{
+      mesa : string | number;
+      items: plato_menu[]; 
+
+    };
+    if (!mesa || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Datos inválidos" });
+    }
+
+    const fecha = new Date().toISOString().split("T")[0];
 
     // Convertimos objetos a arrays para Google Sheets
     const filas = items.map((item: plato_menu) => [
-      item.Fecha,
+      fecha,
+      mesa,
       item.ID,
       item.Nombre,
       item.Cantidad,
+      item.Observaciones?? ""
     ]);
 
     await googlesheets.spreadsheets.values.append({
       spreadsheetId,
-      range: "RegistroMenus!A:D",
+      range: "Ventas!A:F",
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: filas,
       },
     });
+    await imprimirComanda({ mesa, items });
 
     res.json({ success: true, total: filas.length });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error registrando el menú" });
-  }
+  }catch (error: any) {
+      console.error("Google Sheets error:", error.message);
+      res.status(500).json({ error: "Error registrando el menú" });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
