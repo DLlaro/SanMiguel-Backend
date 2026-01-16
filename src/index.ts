@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { google } from "googleapis";
-import { imprimirComanda } from "./thermal_printer.js";
+import { imprimirComandaRAW } from "./thermal_printer.js";
 
 dotenv.config();
 const app = express();
@@ -43,29 +43,109 @@ app.get("/menu_dia", async (_req, res) => {
   }
 });
 
+
+
+app.get("/lastid", async (_req, res) => {
+  try {
+    const result = await googlesheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "LastId!A2",
+    });
+
+    res.json(result.data.values ?? []);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error leyendo el ultimo id" });
+  }
+});
+
 interface plato_menu {
-  Fecha: Date;
+  IdPedido: number
   ID: string;
   Nombre: string;
   Cantidad: number;
   Observaciones?: string;
 }
 
+/*app.get("/verificar") verificarDisponibilidad(plato: plato_menu ): boolean {
+  try{
+    const result = await googlesheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "LastId!A2",
+    });
+
+    res.json(result.data.values ?? []);
+  }catch(error){
+
+  }
+  return false;
+}*/
+
+interface plato_dia {
+  id: string;
+  nombre: string;
+  cantidad: number;
+}
+
+app.post("/actualizar_cantidades", async(req,res)=>{
+  try {
+    const platos = req.body
+    const now = new Date();
+    const fecha = now.toLocaleDateString("es-PE", { timeZone: "America/Lima"});//para el registro en el sheet
+
+    // Mapear los platos al formato de filas para Google Sheets
+    const filas = platos.map((plato:plato_dia) => [
+      fecha,         // Columna A
+      plato.id,      // Columna B
+      plato.nombre,  // Columna C
+      plato.cantidad // Columna D
+    ]);
+    console.log(filas)
+    // Actualizar Google Sheets (usa UPDATE en vez de APPEND)
+    await googlesheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "MenuDia!A:D", // Empieza en B2 para no sobrescribir headers
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: filas,
+      },
+    });
+    
+    res.status(200).json({ 
+      success: true, 
+      mensaje: "Cantidades actualizadas correctamente",
+      platosActualizados: platos.length
+    });
+    
+  } catch (error) {
+    console.error("Error actualizando cantidades:", error);
+    res.status(500).json({ 
+      error: "Error al actualizar cantidades",
+      detalle: error.message 
+    });
+  }
+});
+
 app.post("/registrar_menu", async (req, res) => {
   try {
-    const { mesa, items } = req.body as{
-      mesa : string | number;
+    const { idPedido, mesa, items } = req.body as{
+      idPedido: number;
+      mesa : string;
       items: plato_menu[]; 
 
     };
+    console.log(req.body)
     if (!mesa || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Datos inválidos" });
     }
-
-    const fecha = new Date().toISOString().split("T")[0];
-
+    
+    const now = new Date();
+    const fecha = now.toLocaleDateString("es-PE", { timeZone: "America/Lima"});//para el registro en el sheet
+    console.log(fecha)
+    const fechaHora =  now.toLocaleString("es-PE", { timeZone: "America/Lima"});//para la comanda
     // Convertimos objetos a arrays para Google Sheets
     const filas = items.map((item: plato_menu) => [
+      idPedido,
       fecha,
       mesa,
       item.ID,
@@ -74,15 +154,51 @@ app.post("/registrar_menu", async (req, res) => {
       item.Observaciones?? ""
     ]);
 
+
+
     await googlesheets.spreadsheets.values.append({
       spreadsheetId,
-      range: "Ventas!A:F",
+      range: "Ventas!A:G",
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: filas,
       },
     });
-    await imprimirComanda({ mesa, items });
+
+    // AUMENTAR EN UNO EL LASTID
+    await googlesheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "LastId!A2",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[idPedido]],
+      },
+    });
+
+    // CONVERSIÓN PARA LA IMPRESORA
+    const itemsComanda = items.map((item) => {
+      const obj = {
+        cantidad: item.Cantidad,
+        nombre: item.Nombre,
+      } as {
+        cantidad: number;
+        nombre: string;
+        observaciones?: string;
+      };
+
+      if (item.Observaciones) {
+        obj.observaciones = item.Observaciones;
+      }
+
+      return obj;
+    });
+
+    imprimirComandaRAW({
+      idPedido,
+      mesa,
+      fechaHora,
+      items: itemsComanda,
+    });
 
     res.json({ success: true, total: filas.length });
   }catch (error: any) {
