@@ -10,6 +10,7 @@ export function imprimirComandaRAW(
     items: {
       cantidad: number;
       nombre: string;
+      tipo: string;
       observaciones?: string[] | string;
     }[];
   }
@@ -31,17 +32,26 @@ export function imprimirComandaRAW(
     bytes.push(0x1d, 0x21, 0x00); // Tamaño normal
     bytes.push(0x1b, 0x61, 0x00); // Alinear izquierda
 
-    pushText(bytes, "=========================================\n");
+    pushText(bytes, "==============================================\n");
 
     // INFORMACIÓN DE MESA
     bytes.push(0x1d, 0x21, 0x11); // Doble tamaño
     pushText(bytes, `ID: ${comanda.idPedido}\n`);
     bytes.push(0x1d, 0x21, 0x00); // Tamaño normal
     pushText(bytes, `HORA: ${comanda.fechaHora}\n`);
-    pushText(bytes, "=========================================\n");
+    pushText(bytes, "==============================================\n");
 
-    // ITEMS
+// ITEMS
+    let tipoAnterior: string | null = null;
+    
     for (const item of comanda.items) {
+      // Dibujar separador si cambió el tipo
+      if (tipoAnterior !== null && tipoAnterior !== item.tipo) {
+        pushText(bytes, "=============================================\n");
+      }
+      
+      tipoAnterior = item.tipo;
+
       bytes.push(0x1d, 0x21, 0x11); // Doble tamaño
       pushText(bytes, `${item.cantidad}x ${item.nombre}`);
       bytes.push(0x1d, 0x21, 0x00); // Tamaño normal
@@ -63,7 +73,7 @@ export function imprimirComandaRAW(
     }
 
     // FOOTER
-    pushText(bytes, "=========================================\n");
+    pushText(bytes, "==============================================\n");
 
     // CORTE
     pushText(bytes, "\n\n\n");

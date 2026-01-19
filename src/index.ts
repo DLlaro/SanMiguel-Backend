@@ -63,6 +63,7 @@ interface plato_menu {
   IdPedido: number
   ID: string;
   Nombre: string;
+  Tipo: string,
   Cantidad: number;
   Observaciones?: string;
 }
@@ -84,6 +85,7 @@ interface plato_menu {
 interface plato_dia {
   id: string;
   nombre: string;
+  tipo:string,
   cantidad: number;
 }
 
@@ -98,13 +100,14 @@ app.post("/actualizar_cantidades", async(req,res)=>{
       fecha,         // Columna A
       plato.id,      // Columna B
       plato.nombre,  // Columna C
-      plato.cantidad // Columna D
+      plato.tipo,// Columna D
+      plato.cantidad // Columna E
     ]);
     console.log(filas)
     // Actualizar Google Sheets (usa UPDATE en vez de APPEND)
     await googlesheets.spreadsheets.values.update({
       spreadsheetId,
-      range: "MenuDia!A:D", // Empieza en B2 para no sobrescribir headers
+      range: "MenuDia!A:E", // Empieza en B2 para no sobrescribir headers
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: filas,
@@ -119,9 +122,10 @@ app.post("/actualizar_cantidades", async(req,res)=>{
     
   } catch (error) {
     console.error("Error actualizando cantidades:", error);
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido";
     res.status(500).json({ 
       error: "Error al actualizar cantidades",
-      detalle: error.message 
+      detalle: errorMessage 
     });
   }
 });
@@ -150,6 +154,7 @@ app.post("/registrar_menu", async (req, res) => {
       mesa,
       item.ID,
       item.Nombre,
+      //item.Tipo,
       item.Cantidad,
       item.Observaciones?? ""
     ]);
@@ -180,9 +185,11 @@ app.post("/registrar_menu", async (req, res) => {
       const obj = {
         cantidad: item.Cantidad,
         nombre: item.Nombre,
+        tipo: item.Tipo,
       } as {
         cantidad: number;
         nombre: string;
+        tipo: string;
         observaciones?: string;
       };
 
@@ -192,6 +199,7 @@ app.post("/registrar_menu", async (req, res) => {
 
       return obj;
     });
+    console.log(itemsComanda)
 
     imprimirComandaRAW({
       idPedido,
@@ -201,10 +209,12 @@ app.post("/registrar_menu", async (req, res) => {
     });
 
     res.json({ success: true, total: filas.length });
-  }catch (error: any) {
-      console.error("Google Sheets error:", error.message);
-      res.status(500).json({ error: "Error registrando el menú" });
-    }
+  }catch (error: unknown) {
+    console.error("Google Sheets error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+    console.error("Mensaje:", errorMessage);
+    res.status(500).json({ error: "Error registrando el menú" });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
